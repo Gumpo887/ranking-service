@@ -83,23 +83,6 @@ services:
       - elk
       - appnet
 
-  # ======================
-  # MYSQL
-  # ======================
-  mysql:
-    image: mysql:8
-    container_name: mysql_db
-    environment:
-      - MYSQL_ROOT_PASSWORD=rootpass
-      - MYSQL_DATABASE=itemsdb
-      - MYSQL_AUTHENTICATION_PLUGIN=mysql_native_password
-    ports:
-      - "3306:3306"
-    volumes:
-      - ./mysql_data:/var/lib/mysql
-    networks:
-      - appnet
-
 # ======================
 # VOLUMES & NETWORKS
 # ======================
