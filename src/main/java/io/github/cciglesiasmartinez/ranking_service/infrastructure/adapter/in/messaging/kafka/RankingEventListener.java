@@ -19,7 +19,7 @@ public class RankingEventListener {
     }
 
     @KafkaListener(
-            topics = "#{@rankingProperties.userItemChangedTopic}",
+            topics = "${ranking.user-item-changed-topic}",
             groupId = "${spring.application.name}",
             containerFactory = "userItemChangedKafkaListenerContainerFactory"
     )
@@ -29,7 +29,7 @@ public class RankingEventListener {
     }
 
     @KafkaListener(
-            topics = "#{@rankingProperties.userStatusChangedTopic}",
+            topics = "${ranking.user-status-changed-topic}",
             groupId = "${spring.application.name}",
             containerFactory = "userStatusChangedKafkaListenerContainerFactory"
     )
@@ -39,7 +39,7 @@ public class RankingEventListener {
     }
 
     @KafkaListener(
-            topics = "#{@rankingProperties.itemRarityUpdatedTopic}",
+            topics = "${ranking.item-rarity-updated-topic}",
             groupId = "${spring.application.name}",
             containerFactory = "itemRarityUpdatedKafkaListenerContainerFactory"
     )

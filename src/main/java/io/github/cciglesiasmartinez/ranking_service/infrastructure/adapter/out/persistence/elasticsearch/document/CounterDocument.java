@@ -8,8 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Getter
@@ -19,5 +17,5 @@ import java.time.LocalDateTime;
 public class CounterDocument {
 
     private long activeUsers;
-    private LocalDateTime updatedAt;
+    private String updatedAt;
 }

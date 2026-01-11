@@ -10,6 +10,7 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.UpdateRequest;
 import co.elastic.clients.elasticsearch.core.UpdateByQueryResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.json.JsonData;
 import io.github.cciglesiasmartinez.ranking_service.infrastructure.adapter.out.persistence.elasticsearch.document.CounterDocument;
 import io.github.cciglesiasmartinez.ranking_service.infrastructure.adapter.out.persistence.elasticsearch.document.ItemRarityDocument;
 import io.github.cciglesiasmartinez.ranking_service.infrastructure.adapter.out.persistence.elasticsearch.document.ProcessedEventDocument;
@@ -19,7 +20,7 @@ import io.github.cciglesiasmartinez.ranking_service.infrastructure.config.Rankin
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -55,7 +56,8 @@ public class RankingElasticsearchRepository {
     }
 
     public void markEventProcessed(String eventId) {
-        ProcessedEventDocument document = new ProcessedEventDocument(eventId, LocalDateTime.now());
+        String ts = Instant.now().toString();
+        ProcessedEventDocument document = new ProcessedEventDocument(eventId, ts);
         try {
             client.index(request -> request.index(PROCESSED_EVENTS_INDEX).id(eventId).document(document));
         } catch (IOException ex) {
@@ -66,8 +68,10 @@ public class RankingElasticsearchRepository {
     public Optional<UserItemDocument> getUserItem(String userId, String itemId) {
         String id = userItemId(userId, itemId);
         try {
-            GetResponse<UserItemDocument> response = client.get(request -> request.index(USER_ITEMS_INDEX).id(id),
-                    UserItemDocument.class);
+            GetResponse<UserItemDocument> response = client.get(
+                    request -> request.index(USER_ITEMS_INDEX).id(id),
+                    UserItemDocument.class
+            );
             if (!response.found()) {
                 return Optional.empty();
             }
@@ -94,21 +98,39 @@ public class RankingElasticsearchRepository {
     }
 
     public long updateItemOwners(String itemId, int delta) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("delta", delta);
-        params.put("itemId", itemId);
-        params.put("updatedAt", LocalDateTime.now().toString());
+        String ts = Instant.now().toString();
 
-        ItemRarityDocument upsert = new ItemRarityDocument(itemId, Math.max(0, delta), 0, 0.0, LocalDateTime.now());
+        Map<String, JsonData> params = new HashMap<>();
+        params.put("delta", JsonData.of((long) delta));
+        params.put("itemId", JsonData.of(itemId));
+        params.put("updatedAt", JsonData.of(ts));
+
+        // upsert: (String, long, long, double, String)
+        ItemRarityDocument upsert = new ItemRarityDocument(
+                itemId,
+                Math.max(0L, (long) delta),
+                0L,
+                0.0,
+                ts
+        );
 
         try {
             client.update(UpdateRequest.of(builder -> builder
-                    .index(ITEM_RARITY_INDEX)
-                    .id(itemId)
-                    .script(script -> script.inline(inline -> inline
-                            .source("ctx._source.itemId = params.itemId; ctx._source.owners = (ctx._source.owners == null ? 0 : ctx._source.owners) + params.delta; if (ctx._source.owners < 0) { ctx._source.owners = 0; } ctx._source.updatedAt = params.updatedAt;")
-                            .params(params)))
-                    .upsert(upsert)), ItemRarityDocument.class);
+                            .index(ITEM_RARITY_INDEX)
+                            .id(itemId)
+                            .script(script -> script.inline(inline -> inline
+                                    .source(
+                                            "ctx._source.item_id = params.itemId;" +
+                                            "ctx._source.owners = (ctx._source.owners == null ? 0 : ctx._source.owners) + params.delta;" +
+                                            "if (ctx._source.owners < 0) { ctx._source.owners = 0; }" +
+                                            "ctx._source.updated_at = params.updatedAt;"
+                                    )
+                                    .params(params)
+                            ))
+                            .upsert(upsert)),
+                    ItemRarityDocument.class
+            );
+
             return getItemRarity(itemId).map(ItemRarityDocument::getOwners).orElse(0L);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to update item owners", ex);
@@ -117,8 +139,10 @@ public class RankingElasticsearchRepository {
 
     public Optional<ItemRarityDocument> getItemRarity(String itemId) {
         try {
-            GetResponse<ItemRarityDocument> response = client.get(request -> request.index(ITEM_RARITY_INDEX).id(itemId),
-                    ItemRarityDocument.class);
+            GetResponse<ItemRarityDocument> response = client.get(
+                    request -> request.index(ITEM_RARITY_INDEX).id(itemId),
+                    ItemRarityDocument.class
+            );
             if (!response.found()) {
                 return Optional.empty();
             }
@@ -138,8 +162,10 @@ public class RankingElasticsearchRepository {
 
     public long getActiveUsers() {
         try {
-            GetResponse<CounterDocument> response = client.get(request -> request.index(COUNTERS_INDEX).id(GLOBAL_COUNTER_ID),
-                    CounterDocument.class);
+            GetResponse<CounterDocument> response = client.get(
+                    request -> request.index(COUNTERS_INDEX).id(GLOBAL_COUNTER_ID),
+                    CounterDocument.class
+            );
             if (!response.found() || response.source() == null) {
                 return 0L;
             }
@@ -150,19 +176,34 @@ public class RankingElasticsearchRepository {
     }
 
     public long updateActiveUsers(int delta) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("delta", delta);
-        params.put("updatedAt", LocalDateTime.now().toString());
+        String ts = Instant.now().toString();
 
-        CounterDocument upsert = new CounterDocument(Math.max(0, delta), LocalDateTime.now());
+        Map<String, JsonData> params = new HashMap<>();
+        params.put("delta", JsonData.of((long) delta));
+        params.put("updatedAt", JsonData.of(ts));
+
+        // CounterDocument: (long, String)
+        CounterDocument upsert = new CounterDocument(
+                Math.max(0L, (long) delta),
+                ts
+        );
+
         try {
             client.update(UpdateRequest.of(builder -> builder
-                    .index(COUNTERS_INDEX)
-                    .id(GLOBAL_COUNTER_ID)
-                    .script(script -> script.inline(inline -> inline
-                            .source("ctx._source.activeUsers = (ctx._source.activeUsers == null ? 0 : ctx._source.activeUsers) + params.delta; if (ctx._source.activeUsers < 0) { ctx._source.activeUsers = 0; } ctx._source.updatedAt = params.updatedAt;")
-                            .params(params)))
-                    .upsert(upsert)), CounterDocument.class);
+                            .index(COUNTERS_INDEX)
+                            .id(GLOBAL_COUNTER_ID)
+                            .script(script -> script.inline(inline -> inline
+                                    .source(
+                                            "ctx._source.active_users = (ctx._source.active_users == null ? 0 : ctx._source.active_users) + params.delta;" +
+                                            "if (ctx._source.active_users < 0) { ctx._source.active_users = 0; }" +
+                                            "ctx._source.updated_at = params.updatedAt;"
+                                    )
+                                    .params(params)
+                            ))
+                            .upsert(upsert)),
+                    CounterDocument.class
+            );
+
             return getActiveUsers();
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to update active users", ex);
@@ -170,32 +211,53 @@ public class RankingElasticsearchRepository {
     }
 
     public UpdateByQueryResponse updateUserItemsRarity(String itemId, double rarity) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("rarity", rarity);
-        params.put("updatedAt", LocalDateTime.now().toString());
+        String ts = Instant.now().toString();
+
+        Map<String, JsonData> params = new HashMap<>();
+        params.put("rarity", JsonData.of(rarity));
+        params.put("updatedAt", JsonData.of(ts));
+
         try {
             return client.updateByQuery(request -> request
                     .index(USER_ITEMS_INDEX)
                     .query(query -> query.term(term -> term.field("item_id").value(itemId)))
                     .script(script -> script.inline(inline -> inline
-                            .source("ctx._source.rarity = params.rarity; ctx._source.scoreItem = 100 * (0.60 * params.rarity + 0.20 * ctx._source.editionWeight + 0.10 * ctx._source.conditionWeight + 0.10 * ctx._source.completenessWeight); ctx._source.updatedAt = params.updatedAt;")
-                            .params(params))));
+                            .source(
+                                    "ctx._source.rarity = params.rarity;" +
+                                    "ctx._source.score_item = 100 * (0.60 * params.rarity + 0.20 * ctx._source.edition_weight + 0.10 * ctx._source.condition_weight + 0.10 * ctx._source.completeness_weight);" +
+                                    "ctx._source.updated_at = params.updatedAt;"
+                            )
+                            .params(params)
+                    )));
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to update user items rarity", ex);
         }
     }
 
     public UpdateByQueryResponse updateAllItemRarities(long activeUsers, int m) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("activeUsers", activeUsers);
-        params.put("m", m);
-        params.put("updatedAt", LocalDateTime.now().toString());
+        String ts = Instant.now().toString();
+
+        Map<String, JsonData> params = new HashMap<>();
+        params.put("activeUsers", JsonData.of(activeUsers));
+        params.put("m", JsonData.of(m));
+        params.put("updatedAt", JsonData.of(ts));
+
         try {
             return client.updateByQuery(request -> request
                     .index(ITEM_RARITY_INDEX)
                     .script(script -> script.inline(inline -> inline
-                            .source("double raw = Math.log((params.activeUsers + params.m) / (ctx._source.owners + params.m)); double rarity = 1 - Math.exp(-raw); if (rarity < 0) { rarity = 0; } if (rarity > 1) { rarity = 1; } ctx._source.activeUsers = params.activeUsers; ctx._source.rarity = rarity; ctx._source.updatedAt = params.updatedAt;")
-                            .params(params))));
+                            .source(
+                                    "double owners = (ctx._source.owners == null ? 0 : ctx._source.owners);" +
+                                    "double raw = Math.log((params.activeUsers + params.m) / (double) (owners + params.m));" +
+                                    "double rarity = 1 - Math.exp(-raw);" +
+                                    "if (rarity < 0) { rarity = 0; }" +
+                                    "if (rarity > 1) { rarity = 1; }" +
+                                    "ctx._source.active_users = params.activeUsers;" +
+                                    "ctx._source.rarity = rarity;" +
+                                    "ctx._source.updated_at = params.updatedAt;"
+                            )
+                            .params(params)
+                    )));
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to update item rarities", ex);
         }
@@ -204,6 +266,7 @@ public class RankingElasticsearchRepository {
     public List<String> findUserIdsByItemId(String itemId) {
         List<String> userIds = new ArrayList<>();
         List<FieldValue> searchAfter = null;
+
         while (true) {
             SearchResponse<UserItemDocument> response = searchUserItems(itemId, searchAfter);
             List<Hit<UserItemDocument>> hits = response.hits().hits();
@@ -220,6 +283,7 @@ public class RankingElasticsearchRepository {
                 break;
             }
         }
+
         return userIds.stream().distinct().collect(Collectors.toList());
     }
 
@@ -230,9 +294,11 @@ public class RankingElasticsearchRepository {
                     .query(query -> query.term(term -> term.field("item_id").value(itemId)))
                     .sort(sort -> sort.field(field -> field.field("user_id").order(SortOrder.Asc)))
                     .size(rankingProperties.getBatchSize());
+
             if (searchAfter != null) {
                 builder.searchAfter(searchAfter);
             }
+
             return client.search(builder.build(), UserItemDocument.class);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to search user items", ex);
@@ -242,6 +308,7 @@ public class RankingElasticsearchRepository {
     public List<ItemRarityDocument> findAllItemRarities() {
         List<ItemRarityDocument> items = new ArrayList<>();
         List<FieldValue> searchAfter = null;
+
         while (true) {
             SearchResponse<ItemRarityDocument> response = searchItemRarities(searchAfter);
             List<Hit<ItemRarityDocument>> hits = response.hits().hits();
@@ -258,6 +325,7 @@ public class RankingElasticsearchRepository {
                 break;
             }
         }
+
         return items;
     }
 
@@ -267,9 +335,11 @@ public class RankingElasticsearchRepository {
                     .index(ITEM_RARITY_INDEX)
                     .sort(sort -> sort.field(field -> field.field("item_id").order(SortOrder.Asc)))
                     .size(rankingProperties.getBatchSize());
+
             if (searchAfter != null) {
                 builder.searchAfter(searchAfter);
             }
+
             return client.search(builder.build(), ItemRarityDocument.class);
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to search item rarities", ex);
@@ -283,10 +353,13 @@ public class RankingElasticsearchRepository {
                             .query(query -> query.term(term -> term.field("user_id").value(userId)))
                             .sort(sort -> sort.field(field -> field.field("score_item").order(SortOrder.Desc)))
                             .size(topK),
-                    UserItemDocument.class);
+                    UserItemDocument.class
+            );
+
             if (response.hits() == null) {
                 return Collections.emptyList();
             }
+
             return response.hits().hits().stream()
                     .map(Hit::source)
                     .filter(item -> item != null)
@@ -299,8 +372,9 @@ public class RankingElasticsearchRepository {
     public long countUserItems(String userId) {
         try {
             return client.count(CountRequest.of(request -> request
-                    .index(USER_ITEMS_INDEX)
-                    .query(query -> query.term(term -> term.field("user_id").value(userId))))).count();
+                            .index(USER_ITEMS_INDEX)
+                            .query(query -> query.term(term -> term.field("user_id").value(userId)))))
+                    .count();
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to count user items", ex);
         }
@@ -316,11 +390,15 @@ public class RankingElasticsearchRepository {
 
     public Optional<UserScoreDocument> getUserScore(String userId) {
         try {
-            GetResponse<UserScoreDocument> response = client.get(request -> request.index(USER_SCORE_INDEX).id(userId),
-                    UserScoreDocument.class);
+            GetResponse<UserScoreDocument> response = client.get(
+                    request -> request.index(USER_SCORE_INDEX).id(userId),
+                    UserScoreDocument.class
+            );
+
             if (!response.found()) {
                 return Optional.empty();
             }
+
             return Optional.ofNullable(response.source());
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to read user score", ex);
@@ -333,10 +411,13 @@ public class RankingElasticsearchRepository {
                             .index(USER_SCORE_INDEX)
                             .sort(sort -> sort.field(field -> field.field("score").order(SortOrder.Desc)))
                             .size(limit),
-                    UserScoreDocument.class);
+                    UserScoreDocument.class
+            );
+
             if (response.hits() == null) {
                 return Collections.emptyList();
             }
+
             return response.hits().hits().stream()
                     .map(Hit::source)
                     .filter(item -> item != null)

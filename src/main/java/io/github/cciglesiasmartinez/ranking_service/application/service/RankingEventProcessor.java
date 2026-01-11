@@ -14,7 +14,7 @@ import io.github.cciglesiasmartinez.ranking_service.infrastructure.config.Rankin
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -55,13 +55,19 @@ public class RankingEventProcessor {
             if (!existing) {
                 repository.updateItemOwners(itemId, 1);
             }
+
             double editionWeight = rankingProperties.editionWeight(event.getEdition().name());
             double conditionWeight = rankingProperties.conditionWeight(event.getCondition().name());
             double completenessWeight = rankingProperties.completenessWeight(event.getCompleteness().name());
+
             long activeUsers = repository.getActiveUsers();
             long owners = repository.getItemRarity(itemId).map(ItemRarityDocument::getOwners).orElse(0L);
+
             double rarity = calculateRarity(activeUsers, owners);
             double scoreItem = calculateScoreItem(rarity, editionWeight, conditionWeight, completenessWeight);
+
+            String now = Instant.now().toString(); // ISO-8601 UTC: 2026-01-11T21:00:00Z
+
             UserItemDocument document = new UserItemDocument(
                     repository.userItemId(userId, itemId),
                     userId,
@@ -71,16 +77,22 @@ public class RankingEventProcessor {
                     completenessWeight,
                     rarity,
                     scoreItem,
-                    LocalDateTime.now());
+                    now
+            );
+
             repository.upsertUserItem(document);
         }
 
         long activeUsers = repository.getActiveUsers();
         long owners = repository.getItemRarity(itemId).map(ItemRarityDocument::getOwners).orElse(0L);
         double rarity = calculateRarity(activeUsers, owners);
-        repository.upsertItemRarity(new ItemRarityDocument(itemId, owners, activeUsers, rarity, LocalDateTime.now()));
+
+        String now = Instant.now().toString();
+
+        repository.upsertItemRarity(new ItemRarityDocument(itemId, owners, activeUsers, rarity, now));
         publishItemRarityUpdated(itemId, owners, activeUsers, rarity);
         recalculateUserScore(userId);
+
         MDC.clear();
     }
 
@@ -93,15 +105,19 @@ public class RankingEventProcessor {
 
         int delta = event.getStatus() == UserStatus.ACTIVE ? 1 : -1;
         long activeUsers = repository.updateActiveUsers(delta);
+
         repository.updateAllItemRarities(activeUsers, rankingProperties.getM());
+
         List<ItemRarityDocument> items = repository.findAllItemRarities();
         for (ItemRarityDocument document : items) {
             publishItemRarityUpdated(
                     document.getItemId(),
                     document.getOwners(),
                     document.getActiveUsers(),
-                    document.getRarity());
+                    document.getRarity()
+            );
         }
+
         MDC.clear();
     }
 
@@ -113,11 +129,14 @@ public class RankingEventProcessor {
         MDC.put("requestId", event.getEventId());
 
         repository.updateUserItemsRarity(event.getItemId(), event.getRarity());
+
         List<String> userIds = repository.findUserIdsByItemId(event.getItemId());
         Set<String> distinctUserIds = userIds.stream().collect(Collectors.toSet());
+
         for (String userId : distinctUserIds) {
             recalculateUserScore(userId);
         }
+
         MDC.clear();
     }
 
@@ -125,12 +144,17 @@ public class RankingEventProcessor {
         List<UserItemDocument> topItems = repository.getTopUserItems(userId, rankingProperties.getTopK());
         double score = topItems.stream().mapToDouble(UserItemDocument::getScoreItem).sum();
         long distinctOwnedCount = repository.countUserItems(userId);
+
+        String now = Instant.now().toString();
+
         UserScoreDocument document = new UserScoreDocument(
                 userId,
                 score,
                 distinctOwnedCount,
                 rankingProperties.getTopK(),
-                LocalDateTime.now());
+                now
+        );
+
         repository.upsertUserScore(document);
     }
 

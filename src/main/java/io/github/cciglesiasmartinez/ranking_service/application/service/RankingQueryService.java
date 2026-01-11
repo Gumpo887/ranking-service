@@ -29,23 +29,34 @@ public class RankingQueryService implements RankingQueryUseCase {
     @Override
     public Envelope<UserScoreResponse> getUserScore(String userId) {
         Optional<UserScoreDocument> score = repository.getUserScore(userId);
+
         UserScoreResponse response = score
                 .map(document -> new UserScoreResponse(
                         document.getUserId(),
                         document.getScore(),
                         document.getDistinctOwnedCount(),
-                        document.getTopK(),
-                        document.getUpdatedAt()))
-                .orElse(new UserScoreResponse(userId, 0.0, 0L, rankingProperties.getTopK(), null));
+                        document.getTopK(),          // <-- TOPK debe ser int en UserScoreDocument
+                        document.getUpdatedAt()       // <-- ahora te digo qué hacer con esto
+                ))
+                .orElseGet(() -> new UserScoreResponse(
+                        userId,
+                        0.0,
+                        0L,
+                        rankingProperties.getTopK(),
+                        null
+                ));
+
         return new Envelope<>(response, new Meta());
     }
 
     @Override
     public Envelope<LeaderboardResponse> getLeaderboard(int limit) {
         List<UserScoreDocument> leaders = repository.getLeaderboard(limit);
+
         List<LeaderboardEntryResponse> entries = leaders.stream()
                 .map(document -> new LeaderboardEntryResponse(document.getUserId(), document.getScore()))
                 .collect(Collectors.toList());
+
         return new Envelope<>(new LeaderboardResponse(entries), new Meta());
     }
 }

@@ -8,8 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Getter
@@ -21,10 +19,13 @@ public class UserItemDocument {
     private String id;
     private String userId;
     private String itemId;
+
     private double editionWeight;
     private double conditionWeight;
     private double completenessWeight;
+
     private double rarity;
     private double scoreItem;
-    private LocalDateTime updatedAt;
+
+    private String updatedAt;
 }

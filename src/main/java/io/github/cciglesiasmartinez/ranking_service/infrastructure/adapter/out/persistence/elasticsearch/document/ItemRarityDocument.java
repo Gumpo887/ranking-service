@@ -8,8 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Getter
@@ -22,5 +20,5 @@ public class ItemRarityDocument {
     private long owners;
     private long activeUsers;
     private double rarity;
-    private LocalDateTime updatedAt;
+    private String updatedAt; 
 }
