@@ -8,10 +8,10 @@
 		<version>3.5.6</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>io.github.cciglesiasmartinez</groupId>
-	<artifactId>microservice-template</artifactId>
+	<groupId>net.movievault</groupId>
+	<artifactId>ranking-service</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>microservice-template</name>
+	<name>ranking-service</name>
 	<description>Microservice template</description>
 	<url/>
 	<licenses>
